@@ -1,6 +1,7 @@
 import { api, errMsg } from '../lib/api';
 import { Resource, useLoad } from '../components/Resource';
 import { Badge } from '../components/ui';
+import { useAuth } from '../auth/AuthContext';
 
 const DEPT_OPTS = { optionUrl: '/academic/departments' };
 const COURSE_OPTS = { optionUrl: '/academic/courses' };
@@ -9,6 +10,8 @@ const SEM_OPTS = { optionUrl: '/academic/semesters', optionLabelKey: 'label' };
 
 /* ══════════════ Departments ══════════════ */
 export function DepartmentsPage() {
+  const { can } = useAuth();
+  const mayAssignHod = can('departments:edit') || can('departments:manage');
   return (
     <Resource
       endpoint="/academic/departments" title="Departments" subtitle="Academic departments with HOD assignment"
@@ -28,7 +31,7 @@ export function DepartmentsPage() {
         { name: 'description', label: 'Description', type: 'textarea' },
         { name: 'isActive', label: 'Active', type: 'checkbox', default: true },
       ]}
-      rowActions={(row, { reload }) => <HodButton row={row} reload={reload} />}
+      rowActions={(row, { reload }) => mayAssignHod && <HodButton row={row} reload={reload} />}
     />
   );
 }
@@ -55,6 +58,8 @@ function HodButton({ row, reload }: { row: any; reload: () => void }) {
 
 /* ══════════════ Courses ══════════════ */
 export function CoursesPage() {
+  const { can } = useAuth();
+  const mayGenSemesters = can('semesters:manage') || can('courses:manage');
   return (
     <Resource
       endpoint="/academic/courses" title="Courses" subtitle="Degree programmes; semesters are generated per course"
@@ -78,7 +83,7 @@ export function CoursesPage() {
           { value: 'DEGREE', label: 'Degree' }, { value: 'DIPLOMA', label: 'Diploma' }, { value: 'POSTGRADUATE', label: 'Post Graduate' },
         ], default: 'DEGREE' },
       ]}
-      rowActions={(row, { reload }) => <BootstrapSemesters row={row} reload={reload} />}
+      rowActions={(row, { reload }) => mayGenSemesters && <BootstrapSemesters row={row} reload={reload} />}
     />
   );
 }
@@ -146,6 +151,8 @@ export function SemestersPage() {
 
 /* ══════════════ Sections ══════════════ */
 export function SectionsPage() {
+  const { can } = useAuth();
+  const mayAssignCoordinator = can('sections:edit') || can('allocations:manage') || can('departments:manage');
   return (
     <Resource
       endpoint="/academic/sections" title="Sections" subtitle="Sections within semesters; assign a coordinator per section"
@@ -168,7 +175,7 @@ export function SectionsPage() {
         { name: 'capacity', label: 'Capacity', type: 'number', default: 60 },
       ]}
       transformForm={(row) => ({ semesterId: row.semesterId, name: row.name, capacity: row.capacity })}
-      rowActions={(row, { reload }) => <CoordinatorButton row={row} reload={reload} />}
+      rowActions={(row, { reload }) => mayAssignCoordinator && <CoordinatorButton row={row} reload={reload} />}
     />
   );
 }

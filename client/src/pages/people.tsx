@@ -149,6 +149,9 @@ function StudentModal({ modal, onClose }: { modal: any; onClose: () => void }) {
 
 /* ══════════════════════ TEACHERS ══════════════════════ */
 export function TeachersPage() {
+  const { can } = useAuth();
+  const mayAllocate = can('allocations:create') || can('allocations:manage') || can('teachers:edit');
+  const mayCreateLogin = can('teachers:create') || can('teachers:edit') || can('users:manage');
   const [alloc, setAlloc] = useState<any>(null);
   return (
     <>
@@ -185,12 +188,12 @@ export function TeachersPage() {
         })}
         rowActions={(row) => (
           <>
-            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setAlloc(row)}>Allocate</button>
-            <button className="btn-ghost !px-2 !py-1 text-xs" onClick={async () => {
+            {mayAllocate && <button className="btn-ghost !px-2 !py-1 text-xs" onClick={() => setAlloc(row)}>Allocate</button>}
+            {mayCreateLogin && <button className="btn-ghost !px-2 !py-1 text-xs" onClick={async () => {
               if (!confirm('Create/reset login for this teacher?')) return;
               try { const { data } = await api.post(`/teachers/${row.id}/create-login`, {}); alert(`Login ready — user: ${data.credential?.username}, password: ${data.credential?.password}`); }
               catch (e) { alert(errMsg(e)); }
-            }}>Login</button>
+            }}>Login</button>}
           </>
         )}
       />

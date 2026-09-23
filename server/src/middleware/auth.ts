@@ -73,7 +73,7 @@ export const requirePermission =
   (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) return next(httpError(401, 'Authentication required'));
     if (keys.length === 0 || keys.some((k) => userHas(req.user!, k))) return next();
-    next(httpError(403, `Forbidden: requires ${keys.join(' or ')}`));
+    next(httpError(403, 'You are not authorised to perform this action'));
   };
 
 /** Route guard: require the user's role to be one of the listed roles. */
@@ -82,5 +82,5 @@ export const requireRole =
   (req: Request, _res: Response, next: NextFunction) => {
     if (!req.user) return next(httpError(401, 'Authentication required'));
     if (roles.includes(req.user.role)) return next();
-    next(httpError(403, 'Forbidden for your role'));
+    next(httpError(403, 'You are not authorised to perform this action'));
   };
