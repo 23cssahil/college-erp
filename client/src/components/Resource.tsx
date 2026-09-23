@@ -28,6 +28,7 @@ export interface FieldCfg {
   optionUrl?: string;              // fetch {items:[{id,name,...}]} for select options
   optionLabelKey?: string;         // property used as visible label (default: name)
   optionValueKey?: string;         // property used as value (default: id)
+  dependsOn?: string;              // filter field name: options reload when that filter changes
   required?: boolean;
   hint?: string;
   perma?: boolean;                 // hidden while editing (immutable)
@@ -88,22 +89,29 @@ export function Resource(p: ResourceProps) {
   const [fq, setFq] = useState<Record<string, string>>({});
   const [optionCache, setOptionCache] = useState<Record<string, { value: any; label: string }[]>>({});
 
-  // resolve optionUrl selects
+  // resolve optionUrl selects (cache key includes the dependsOn filter value so
+  // child option lists reload when their parent filter changes)
+  const optKey = (f: FieldCfg) => {
+    const dep = f.dependsOn ? fq[f.dependsOn] : '';
+    return f.dependsOn && dep ? `${f.optionUrl}?${f.dependsOn}=${dep}` : f.optionUrl!;
+  };
   const urlFields = useMemo(() => [...createFields, ...editFields, ...(p.filters || [])].filter((f) => f.optionUrl), [createFields, editFields, p.filters]);
   useEffect(() => {
     (async () => {
-      const need = urlFields.filter((f) => !optionCache[f.optionUrl!]);
+      const need = urlFields.filter((f) => !optionCache[optKey(f)]);
       if (!need.length) return;
       const entries = await Promise.all(need.map(async (f) => {
+        const key = optKey(f);
         try {
-          const { data } = await api.get(f.optionUrl!);
+          const { data } = await api.get(key);
           const items = data.items || data.roles || data.permissions || (Array.isArray(data) ? data : []);
-          return [f.optionUrl!, items.map((i: any) => ({ value: i[f.optionValueKey || 'id'], label: i[f.optionLabelKey || 'name'] || `${i.name} (${i.code || i.id})` }))];
-        } catch { return [f.optionUrl!, []]; }
+          return [key, items.map((i: any) => ({ value: i[f.optionValueKey || 'id'], label: i[f.optionLabelKey || 'name'] || `${i.name} (${i.code || i.id})` }))];
+        } catch { return [key, []]; }
       }));
       setOptionCache((c) => ({ ...c, ...Object.fromEntries(entries) }));
     })();
-  }, [urlFields, optionCache]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlFields, optionCache, fq]);
 
   const pageSize = p.pageSize || 20;
   const query: any = p.paginate ? { page, limit: pageSize } : {};
@@ -165,7 +173,7 @@ export function Resource(p: ResourceProps) {
   }
 
   const fieldInput = (f: FieldCfg, value: any, onChange: (v: any) => void) => {
-    const options = f.options || (f.optionUrl ? optionCache[f.optionUrl] || [] : []);
+    const options = f.options || (f.optionUrl ? optionCache[optKey(f)] || [] : []);
     switch (f.type) {
       case 'select':
       case 'multiselect':
@@ -213,7 +221,15 @@ export function Resource(p: ResourceProps) {
               value={q} onChange={(e: any) => { setPage(1); setQ(e.target.value); }} />
           )}
           {(p.filters || []).map((f) => {
-            return fieldInput(f, fq[f.name] || '', (v: any) => { setPage(1); setFq((s) => ({ ...s, [f.name]: v })); });
+            return fieldInput(f, fq[f.name] || '', (v: any) => {
+              setPage(1);
+              setFq((s) => {
+                const next = { ...s, [f.name]: v };
+                // changing a parent filter clears any child filters that depend on it
+                for (const g of p.filters || []) if (g.dependsOn === f.name) next[g.name] = '';
+                return next;
+              });
+            });
           })}
         </div>
       )}

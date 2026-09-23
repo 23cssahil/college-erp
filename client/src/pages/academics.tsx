@@ -4,7 +4,8 @@ import { Badge } from '../components/ui';
 
 const DEPT_OPTS = { optionUrl: '/academic/departments' };
 const COURSE_OPTS = { optionUrl: '/academic/courses' };
-const SEM_OPTS = { optionUrl: '/academic/semesters' };
+// server returns a composed label: "BTCS · Semester 3" so the course/department is visible
+const SEM_OPTS = { optionUrl: '/academic/semesters', optionLabelKey: 'label' };
 
 /* ══════════════ Departments ══════════════ */
 export function DepartmentsPage() {
@@ -127,6 +128,7 @@ export function SemestersPage() {
     <Resource
       endpoint="/academic/semesters" title="Semesters" subtitle="Offered per course; use ⚙ on a course to generate all at once"
       paginate={false} canEditKey="semesters:manage"
+      filters={[{ name: 'departmentId', label: 'Department', type: 'select', ...DEPT_OPTS }]}
       columns={[
         { key: 'number', label: '#' },
         { key: 'name', label: 'Name' },
@@ -148,11 +150,14 @@ export function SectionsPage() {
     <Resource
       endpoint="/academic/sections" title="Sections" subtitle="Sections within semesters; assign a coordinator per section"
       paginate={false} canEditKey="sections:edit"
-      filters={[{ name: 'semesterId', label: 'Semester', type: 'select', ...SEM_OPTS }]}
+      filters={[
+        { name: 'departmentId', label: 'Department', type: 'select', ...DEPT_OPTS },
+        { name: 'semesterId', label: 'Semester', type: 'select', dependsOn: 'departmentId', ...SEM_OPTS },
+      ]}
       columns={[
         { key: 'name', label: 'Section' },
-        { key: 'course', label: 'Course', render: (r) => r.semester?.course?.name },
-        { key: 'semester', label: 'Semester', render: (r) => `Sem ${r.semester?.number}` },
+        { key: 'course', label: 'Course', render: (r) => r.semester?.course?.name || <span className="text-slate-400">—</span> },
+        { key: 'semester', label: 'Semester', render: (r) => r.semester ? `Sem ${r.semester.number}` : <span className="text-amber-500">not set</span> },
         { key: 'capacity', label: 'Capacity' },
         { key: 'students', label: 'Students', render: (r) => r._count?.students ?? 0 },
         { key: 'coordinator', label: 'Coordinator', render: (r) => r.coordinator?.fullName || <span className="text-slate-400">—</span> },

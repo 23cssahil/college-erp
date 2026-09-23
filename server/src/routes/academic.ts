@@ -175,18 +175,24 @@ router.delete('/courses/:id', requirePermission('courses:delete', 'courses:manag
 router.get('/semesters', requirePermission('semesters:view', 'dashboard:view'), wrap(async (req, res) => {
   const where: any = {};
   if (req.query.courseId) where.courseId = oid(req.query.courseId as string);
+  if (req.query.departmentId) {
+    const courses = await Course.find({ departmentId: oid(req.query.departmentId as string) }).select('_id');
+    where.courseId = { $in: courses.map((c) => c._id) };
+  }
   const docs = await Semester.find(where)
     .populate({ path: 'courseId', as: 'course', select: 'name code' });
   const items = await Promise.all(docs.map(async (s: any) => {
     const j = s.toJSON();
+    // composed label so dropdowns can tell which course/department a semester belongs to
+    j.label = `${j.course?.code || '—'} · ${j.name || `Semester ${j.number}`}`;
     j._count = {
       sections: await Section.countDocuments({ semesterId: s._id }),
       subjects: await Subject.countDocuments({ semesterId: s._id }),
     };
     return j;
   }));
-  // sort by course name then number
-  items.sort((a: any, b: any) => (a.course?.name || '').localeCompare(b.course?.name || '') || a.number - b.number);
+  // sort by course code then number
+  items.sort((a: any, b: any) => (a.course?.code || '').localeCompare(b.course?.code || '') || a.number - b.number);
   res.json({ items });
 }));
 
@@ -230,6 +236,12 @@ const sectionSchema = z.object({
 router.get('/sections', requirePermission('sections:view', 'dashboard:view'), wrap(async (req, res) => {
   const where: any = {};
   if (req.query.semesterId) where.semesterId = oid(req.query.semesterId as string);
+  if (req.query.departmentId && !req.query.semesterId) {
+    // sections don't store a department; resolve dept → its courses → their semesters
+    const courses = await Course.find({ departmentId: oid(req.query.departmentId as string) }).select('_id');
+    const sems = await Semester.find({ courseId: { $in: courses.map((c) => c._id) } }).select('_id');
+    where.semesterId = { $in: sems.map((s) => s._id) };
+  }
   const docs = await Section.find(where)
     .populate({ path: 'coordinatorId', as: 'coordinator', select: 'fullName' })
     .populate({ path: 'semesterId', as: 'semester', populate: { path: 'courseId', select: 'name code' } });
