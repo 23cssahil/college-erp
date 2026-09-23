@@ -4,7 +4,7 @@ import AppLayout from './layout/AppLayout';
 import { Login, ForgotPassword, ResetPassword, Unauthorized, NotFound } from './pages/auth';
 import Dashboard from './pages/Dashboard';
 import { DepartmentsPage, CoursesPage, AcademicYearsPage, SemestersPage, SectionsPage } from './pages/academics';
-import { StudentsPage, TeachersPage } from './pages/people';
+import { StudentsPage, TeachersPage, AllocationsPage } from './pages/people';
 import { SubjectsPage } from './pages/subjects';
 import { UsersPage, RolesPage } from './pages/admin';
 import { TimetablePage, AttendancePage } from './pages/operations';
@@ -34,6 +34,7 @@ export default function App() {
         <Route path="semesters" element={gate('semesters:view', <SemestersPage />)} />
         <Route path="sections" element={gate('sections:view', <SectionsPage />)} />
         <Route path="subjects" element={gate('subjects:view', <SubjectsPage />)} />
+        <Route path="allocations" element={gate('allocations:view', <AllocationsPage />)} />
 
         <Route path="students" element={gate('students:view', <StudentsPage />)} />
         <Route path="teachers" element={gate('teachers:view', <TeachersPage />)} />

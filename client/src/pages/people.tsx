@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { api, errMsg } from '../lib/api';
 import { Resource, useLoad, FieldCfg } from '../components/Resource';
-import { Badge, Button, Field, Modal, Select, TextInput } from '../components/ui';
+import { Badge, Button, Card, Empty, Field, Modal, PageHeader, Select, Spinner, TextInput } from '../components/ui';
+import { useAuth } from '../auth/AuthContext';
 
 const DEPT: FieldCfg = { name: 'departmentId', label: 'Department', type: 'select', required: true, optionUrl: '/academic/departments' };
 const COURSE: FieldCfg = { name: 'courseId', label: 'Course', type: 'select', required: true, optionUrl: '/academic/courses' };
@@ -259,5 +260,111 @@ function AllocModal({ teacher, onClose }: { teacher: any; onClose: () => void })
         </div>
       </div>
     </Modal>
+  );
+}
+
+/* ════════════════════ SUBJECT ALLOCATIONS (who teaches what) ════════════════════ */
+export function AllocationsPage() {
+  const { can } = useAuth();
+  const mayManage = can('allocations:create') || can('allocations:manage') || can('teachers:edit');
+  const [filterSection, setFilterSection] = useState('');
+  const [f, setF] = useState({ teacherId: '', subjectId: '', sectionId: '', role: 'PRIMARY' });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const list = useLoad<any[]>(async () => {
+    const params = filterSection ? { sectionId: filterSection } : {};
+    return (await api.get('/allocations', { params })).data.items || [];
+  }, [filterSection]);
+  const teachers = useLoad(async () => (await api.get('/teachers', { params: { limit: 200 } })).data.items || [], []);
+  const subjects = useLoad(async () => (await api.get('/subjects', { params: { limit: 200 } })).data.items || [], []);
+  const sections = useLoad(async () => (await api.get('/academic/sections')).data.items || [], []);
+
+  async function add() {
+    setBusy(true); setErr('');
+    try {
+      await api.post('/allocations', f);
+      setF({ teacherId: '', subjectId: '', sectionId: '', role: 'PRIMARY' });
+      list.reload();
+    } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); }
+  }
+  async function remove(id: string) {
+    if (!confirm('Remove this allocation?')) return;
+    try { await api.delete(`/allocations/${id}`); list.reload(); } catch (e) { alert(errMsg(e)); }
+  }
+
+  const sectionLabel = (s: any) => s ? `${s.semester?.course?.code ?? ''} · Sem ${s.semester?.number ?? '?'} · Sec ${s.name}` : '—';
+
+  return (
+    <div>
+      <PageHeader title="Subject Allocations" subtitle="Assign which teacher teaches which subject to which section"
+        actions={
+          <Select value={filterSection} onChange={(e: any) => setFilterSection(e.target.value)} className="!w-auto max-w-xs">
+            <option value="">All sections</option>
+            {(sections.data || []).map((s: any) => <option key={s.id} value={s.id}>{sectionLabel(s)}</option>)}
+          </Select>
+        } />
+
+      {mayManage && (
+        <Card className="mb-4" title="Add allocation">
+          {err && <div className="mb-3 rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-rose-200">{err}</div>}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Field label="Teacher">
+              <Select value={f.teacherId} onChange={(e: any) => setF({ ...f, teacherId: e.target.value })}>
+                <option value="">— Select teacher —</option>
+                {(teachers.data || []).map((t: any) => <option key={t.id} value={t.id}>{t.user?.fullName} ({t.employeeCode})</option>)}
+              </Select>
+            </Field>
+            <Field label="Subject">
+              <Select value={f.subjectId} onChange={(e: any) => setF({ ...f, subjectId: e.target.value })}>
+                <option value="">— Select subject —</option>
+                {(subjects.data || []).map((s: any) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Section">
+              <Select value={f.sectionId} onChange={(e: any) => setF({ ...f, sectionId: e.target.value })}>
+                <option value="">— Select section —</option>
+                {(sections.data || []).map((s: any) => <option key={s.id} value={s.id}>{sectionLabel(s)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Role">
+              <Select value={f.role} onChange={(e: any) => setF({ ...f, role: e.target.value })}>
+                {['PRIMARY', 'LAB', 'COORDINATOR'].map((r) => <option key={r}>{r}</option>)}
+              </Select>
+            </Field>
+            <div className="flex items-end">
+              <Button className="w-full" onClick={add} disabled={busy || !f.teacherId || !f.subjectId || !f.sectionId}>
+                {busy ? 'Assigning…' : '+ Assign'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <div className="table-wrap">
+        <table className="data">
+          <thead><tr><th>Teacher</th><th>Subject</th><th>Section</th><th>Role</th>{mayManage && <th className="text-right">Actions</th>}</tr></thead>
+          <tbody>
+            {list.loading ? <tr><td colSpan={5}><Spinner /></td></tr> : null}
+            {!list.loading && (list.data || []).map((a: any) => (
+              <tr key={a.id}>
+                <td>
+                  <div className="font-medium text-slate-700">{a.teacher?.user?.fullName || '—'}</div>
+                  <div className="text-xs text-slate-400">{a.teacher?.employeeCode}</div>
+                </td>
+                <td>
+                  <div className="font-medium text-slate-700">{a.subject?.name || '—'}</div>
+                  <div className="text-xs text-slate-400">{a.subject?.code} {a.subject?.type && <Badge tone="slate">{a.subject.type}</Badge>}</div>
+                </td>
+                <td>{sectionLabel(a.section)}</td>
+                <td><Badge tone={a.role === 'PRIMARY' ? 'blue' : a.role === 'LAB' ? 'amber' : 'violet'}>{a.role}</Badge></td>
+                {mayManage && <td className="text-right"><button className="btn-ghost !px-2 !py-1 text-xs text-rose-600" onClick={() => remove(a.id)}>Remove</button></td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {!list.loading && !(list.data || []).length && <Empty text="No allocations yet — assign a teacher to a subject & section above" />}
+      </div>
+    </div>
   );
 }

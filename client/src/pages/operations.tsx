@@ -25,6 +25,10 @@ export function TimetablePage() {
     return (await api.get('/subjects', { params: { semesterId: section.semesterId, limit: 200 } })).data.items || [];
   }, [section?.semesterId]);
   const teachers = useLoad(async () => (await api.get('/teachers', { params: { limit: 200 } })).data.items || [], []);
+  const allocations = useLoad<any[]>(async () => {
+    if (!sectionId) return [];
+    return (await api.get('/allocations', { params: { sectionId } })).data.items || [];
+  }, [sectionId]);
 
   const [cell, setCell] = useState<{ day: string; periodNumber: number } | null>(null);
   const [showPeriods, setShowPeriods] = useState(false);
@@ -109,7 +113,7 @@ export function TimetablePage() {
         <SlotModal
           sectionId={sectionId} day={cell.day} periodNumber={cell.periodNumber}
           slot={grid[`${cell.day}-${cell.periodNumber}`]}
-          subjects={subjects.data || []} teachers={teachers.data || []}
+          subjects={subjects.data || []} teachers={teachers.data || []} allocations={allocations.data || []}
           onClose={() => setCell(null)} onSaved={() => { setCell(null); slots.reload(); }}
         />
       )}
@@ -188,10 +192,20 @@ function PeriodsModal({ periods, onClose, onSaved }: any) {
   );
 }
 
-function SlotModal({ sectionId, day, periodNumber, slot, subjects, teachers, onClose, onSaved }: any) {
+function SlotModal({ sectionId, day, periodNumber, slot, subjects, teachers, allocations, onClose, onSaved }: any) {
   const [f, setF] = useState({ subjectId: slot?.subject?.id || '', teacherId: slot?.teacher?.id || '', room: slot?.room || '' });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+
+  // When a subject is picked, offer only teachers allocated to it for this section;
+  // auto-select when there is exactly one.
+  const allocated = f.subjectId ? (allocations || []).filter((a: any) => a.subject?.id === f.subjectId) : [];
+  const teacherOpts = f.subjectId ? (teachers || []).filter((t: any) => allocated.some((a: any) => a.teacher?.id === t.id)) : (teachers || []);
+
+  function pickSubject(id: string) {
+    const next = (allocations || []).filter((a: any) => a.subject?.id === id);
+    setF((s) => ({ ...s, subjectId: id, teacherId: next.length === 1 ? next[0]?.teacher?.id || s.teacherId : s.teacherId }));
+  }
 
   async function save() {
     setBusy(true); setErr('');
@@ -210,15 +224,15 @@ function SlotModal({ sectionId, day, periodNumber, slot, subjects, teachers, onC
       <div className="space-y-4">
         {err && <div className="rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-rose-200">{err}</div>}
         <Field label="Subject">
-          <Select value={f.subjectId} onChange={(e: any) => setF({ ...f, subjectId: e.target.value })}>
+          <Select value={f.subjectId} onChange={(e: any) => pickSubject(e.target.value)}>
             <option value="">— Free / break —</option>
             {subjects.map((s: any) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
           </Select>
         </Field>
-        <Field label="Teacher">
+        <Field label="Teacher" hint={f.subjectId ? 'Only teachers allocated to this subject & section are listed' : undefined}>
           <Select value={f.teacherId} onChange={(e: any) => setF({ ...f, teacherId: e.target.value })}>
             <option value="">— Any —</option>
-            {teachers.map((t: any) => <option key={t.id} value={t.id}>{t.user?.fullName}</option>)}
+            {teacherOpts.map((t: any) => <option key={t.id} value={t.id}>{t.user?.fullName}</option>)}
           </Select>
         </Field>
         <Field label="Room"><TextInput value={f.room} onChange={(e: any) => setF({ ...f, room: e.target.value })} /></Field>

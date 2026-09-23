@@ -20,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/semesters', label: 'Semesters', permission: 'semesters:view', section: 'Academics' },
   { path: '/sections', label: 'Sections', permission: 'sections:view', section: 'Academics' },
   { path: '/subjects', label: 'Subjects', permission: 'subjects:view', section: 'Academics' },
+  { path: '/allocations', label: 'Subject Allocations', permission: 'allocations:view', section: 'Academics' },
 
   { path: '/timetable', label: 'Timetable', permission: 'timetable:view', section: 'Operations' },
   { path: '/attendance', label: 'Attendance', permission: 'attendance:view', section: 'Operations' },

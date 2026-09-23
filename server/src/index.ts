@@ -16,6 +16,7 @@ import academicRoutes from './routes/academic';
 import studentRoutes from './routes/students';
 import teacherRoutes from './routes/teachers';
 import subjectRoutes from './routes/subjects';
+import allocationRoutes from './routes/allocations';
 import operationsRoutes from './routes/operations';
 import examRoutes from './routes/exams';
 import feeRoutes from './routes/fees';
@@ -55,6 +56,7 @@ app.use('/api/academic', authenticate, academicRoutes);
 app.use('/api/students', authenticate, studentRoutes);
 app.use('/api/teachers', authenticate, teacherRoutes);
 app.use('/api/subjects', authenticate, subjectRoutes);
+app.use('/api/allocations', authenticate, allocationRoutes); // teacher ↔ subject ↔ section
 app.use('/api', authenticate, operationsRoutes); // periods, timetable, attendance
 app.use('/api/exams', authenticate, examRoutes); // exams, marks, results
 app.use('/api/fees', authenticate, feeRoutes);
