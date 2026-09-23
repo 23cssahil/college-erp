@@ -47,7 +47,7 @@ export default function AppLayout() {
   }
 
   const sidebar = (
-    <nav className="flex-1 space-y-5 overflow-y-auto px-3 pb-6">
+    <nav className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-6">
       {SECTIONS.map((sec) => {
         const items = visible.filter((n) => n.section === sec);
         if (!items.length) return null;
@@ -79,7 +79,7 @@ export default function AppLayout() {
   );
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* desktop sidebar */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
         {brand}
@@ -98,8 +98,8 @@ export default function AppLayout() {
         </div>
       )}
 
-      {/* main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* main column: its own scroll area so it never moves the sidebar */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-y-auto">
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
           <button className="btn-ghost !px-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Menu">☰</button>
           <div className="hidden text-sm text-slate-500 sm:block">
