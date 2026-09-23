@@ -1,6 +1,6 @@
 import argon2 from 'argon2';
 import crypto from 'crypto';
-import { prisma } from './prisma';
+import { RefreshToken, UserSessionInfo } from '../models';
 import { env } from '../config';
 import { hashToken, signAccessToken } from './http';
 
@@ -22,23 +22,20 @@ export async function issueTokens(
 ): Promise<IssuedTokens> {
   const accessToken = signAccessToken({ sub: userId, role });
   const refreshToken = crypto.randomBytes(48).toString('hex');
+  const tokenHash = hashToken(refreshToken);
 
-  await prisma.refreshToken.create({
-    data: {
-      tokenHash: hashToken(refreshToken),
-      userId,
-      expiresAt: new Date(Date.now() + env.refreshDays * 24 * 60 * 60 * 1000),
-      userAgent: meta.userAgent?.slice(0, 300),
-      ip: meta.ip,
-    },
+  await RefreshToken.create({
+    tokenHash,
+    userId,
+    expiresAt: new Date(Date.now() + env.refreshDays * 24 * 60 * 60 * 1000),
+    userAgent: meta.userAgent?.slice(0, 300),
+    ip: meta.ip,
   });
-  await prisma.userSessionInfo.create({
-    data: {
-      userId,
-      tokenHash: hashToken(refreshToken),
-      device: meta.device?.slice(0, 200),
-      ip: meta.ip,
-    },
+  await UserSessionInfo.create({
+    userId,
+    tokenHash,
+    device: meta.device?.slice(0, 200),
+    ip: meta.ip,
   });
 
   return { accessToken, refreshToken };
@@ -47,18 +44,18 @@ export async function issueTokens(
 /** Rotate: consume an old refresh token and mint a new pair. */
 export async function rotateRefreshToken(oldToken: string, role: string) {
   const hash = hashToken(oldToken);
-  const stored = await prisma.refreshToken.findUnique({ where: { tokenHash: hash } });
+  const stored = await RefreshToken.findOne({ tokenHash: hash });
   if (!stored || stored.revokedAt || stored.expiresAt < new Date()) return null;
 
-  await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-  await prisma.userSessionInfo.deleteMany({ where: { tokenHash: hash } });
+  await RefreshToken.updateOne({ _id: stored._id }, { revokedAt: new Date() });
+  await UserSessionInfo.deleteMany({ tokenHash: hash });
 
-  const tokens = await issueTokens(stored.userId, role, { ip: stored.ip || undefined });
-  return { userId: stored.userId, ...tokens };
+  const tokens = await issueTokens(String(stored.userId), role, { ip: stored.ip || undefined });
+  return { userId: String(stored.userId), ...tokens };
 }
 
 export async function revokeRefreshToken(token: string) {
   const hash = hashToken(token);
-  await prisma.refreshToken.updateMany({ where: { tokenHash: hash, revokedAt: null }, data: { revokedAt: new Date() } });
-  await prisma.userSessionInfo.deleteMany({ where: { tokenHash: hash } });
+  await RefreshToken.updateMany({ tokenHash: hash, revokedAt: null }, { revokedAt: new Date() });
+  await UserSessionInfo.deleteMany({ tokenHash: hash });
 }

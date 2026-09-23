@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
-import { wrap, httpError, parsePagination } from '../lib/http';
+import { Subject, ExamSubject, TeacherAllocation, TeacherProfile, User } from '../models';
+import { wrap, httpError, parsePagination, oid } from '../lib/http';
 import { validate } from '../lib/validate';
 import { requirePermission } from '../middleware/auth';
 import { getHodDepartmentId } from '../middleware/scope';
@@ -24,40 +24,54 @@ const subjectSchema = z.object({
 router.get('/', requirePermission('subjects:view'), wrap(async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
   const where: any = {};
-  for (const k of ['courseId', 'semesterId', 'departmentId']) if (req.query[k]) where[k] = req.query[k];
+  for (const k of ['courseId', 'semesterId', 'departmentId']) if (req.query[k]) where[k] = oid(req.query[k] as string);
   if (req.user!.role === 'HOD') {
     const deptId = await getHodDepartmentId(req.user!);
-    where.departmentId = deptId || '__none__';
+    where.departmentId = deptId ? oid(deptId) : null;
   }
-  const [total, items] = await prisma.$transaction([
-    prisma.subject.count({ where }),
-    prisma.subject.findMany({
-      where, skip, take: limit, orderBy: { code: 'asc' },
-      include: {
-        course: { select: { name: true } }, semester: { select: { number: true } }, department: { select: { code: true } },
-        allocations: { include: { teacher: { select: { user: { select: { fullName: true } } } } } },
-      },
-    }),
+  const [total, docs] = await Promise.all([
+    Subject.countDocuments(where),
+    Subject.find(where).skip(skip).limit(limit).sort({ code: 1 })
+      .populate({ path: 'courseId', as: 'course', select: 'name' })
+      .populate({ path: 'semesterId', as: 'semester', select: 'number' })
+      .populate({ path: 'departmentId', as: 'department', select: 'code' }),
   ]);
+  const items = await Promise.all(docs.map(async (s: any) => {
+    const j = s.toJSON();
+    const allocs = await TeacherAllocation.find({ subjectId: s._id })
+      .populate({ path: 'teacherId', as: 'teacher', populate: { path: 'userId', select: 'fullName' } });
+    j.allocations = allocs.map((a: any) => {
+      const aj = a.toJSON();
+      return { id: String(a._id), role: aj.role, teacher: aj.teacher ? { fullName: aj.teacher.user?.fullName } : null };
+    });
+    return j;
+  }));
   res.json({ total, page, limit, items });
 }));
 
 router.post('/', requirePermission('subjects:create', 'subjects:manage'), validate(subjectSchema), wrap(async (req, res) => {
-  const item = await prisma.subject.create({ data: req.body });
-  await audit(req, 'CREATE', 'subjects', item.id, { code: item.code });
-  res.status(201).json({ item });
+  const b = req.body;
+  const item = await Subject.create({
+    ...b, courseId: oid(b.courseId), departmentId: oid(b.departmentId), semesterId: oid(b.semesterId),
+  });
+  await audit(req, 'CREATE', 'subjects', String(item._id), { code: item.code });
+  res.status(201).json({ item: item.toJSON() });
 }));
 
 router.put('/:id', requirePermission('subjects:edit', 'subjects:manage'), validate(subjectSchema.partial()), wrap(async (req, res) => {
-  const item = await prisma.subject.update({ where: { id: req.params.id }, data: req.body });
-  await audit(req, 'UPDATE', 'subjects', item.id);
-  res.json({ item });
+  const data: any = { ...req.body };
+  for (const k of ['courseId', 'departmentId', 'semesterId']) if (data[k]) data[k] = oid(data[k]);
+  const item = await Subject.findByIdAndUpdate(oid(req.params.id), data, { new: true });
+  if (!item) throw httpError(404, 'Not found');
+  await audit(req, 'UPDATE', 'subjects', String(item._id));
+  res.json({ item: item.toJSON() });
 }));
 
 router.delete('/:id', requirePermission('subjects:delete', 'subjects:manage'), wrap(async (req, res) => {
-  const used = await prisma.examSubject.count({ where: { subjectId: req.params.id } });
+  const id = oid(req.params.id);
+  const used = await ExamSubject.countDocuments({ subjectId: id });
   if (used > 0) throw httpError(409, 'Subject is referenced by exams; deactivate instead');
-  await prisma.subject.delete({ where: { id: req.params.id } });
+  await Subject.deleteOne({ _id: id });
   await audit(req, 'DELETE', 'subjects', req.params.id);
   res.json({ ok: true });
 }));

@@ -1,6 +1,6 @@
 import type { Request } from 'express';
-import { prisma } from '../lib/prisma';
-import { httpError } from '../lib/http';
+import { Department, TeacherProfile, Section, StudentProfile, ParentLink, TeacherAllocation } from '../models';
+import { httpError, oid } from '../lib/http';
 import type { AuthUser } from './auth';
 
 /**
@@ -16,66 +16,59 @@ import type { AuthUser } from './auth';
  */
 
 export async function getHodDepartmentId(user: AuthUser): Promise<string | null> {
-  const dept = await prisma.department.findFirst({ where: { hodId: user.id } });
-  return dept?.id ?? null;
+  const dept = await Department.findOne({ hodId: oid(user.id) }).select('_id');
+  return dept ? String(dept._id) : null;
 }
 
 export async function getTeacherProfileId(user: AuthUser): Promise<string | null> {
-  const tp = await prisma.teacherProfile.findUnique({ where: { userId: user.id } });
-  return tp?.id ?? null;
+  const tp = await TeacherProfile.findOne({ userId: oid(user.id) }).select('_id');
+  return tp ? String(tp._id) : null;
 }
 
 export async function getCoordinatorSectionIds(user: AuthUser): Promise<string[]> {
-  const secs = await prisma.sections.findMany({
-    where: { coordinatorId: user.id },
-    select: { id: true },
-  });
-  return secs.map((s) => s.id);
+  const secs = await Section.find({ coordinatorId: oid(user.id) }).select('_id');
+  return secs.map((s: any) => String(s._id));
 }
 
 export async function getStudentProfileId(user: AuthUser): Promise<string | null> {
-  const sp = await prisma.studentProfile.findUnique({ where: { userId: user.id } });
-  return sp?.id ?? null;
+  const sp = await StudentProfile.findOne({ userId: oid(user.id) }).select('_id');
+  return sp ? String(sp._id) : null;
 }
 
 export async function getParentChildStudentIds(user: AuthUser): Promise<string[]> {
-  const links = await prisma.parentLink.findMany({
-    where: { parentId: user.id },
-    select: { studentId: true },
-  });
-  return links.map((l) => l.studentId);
+  const links = await ParentLink.find({ parentId: oid(user.id) }).select('studentId');
+  return links.map((l: any) => String(l.studentId));
 }
 
 /**
- * Build a Prisma `where` fragment for StudentProfile queries based on the caller's scope.
+ * Build a StudentProfile Mongo filter based on the caller's scope.
  * Returns null when the caller has unrestricted (institution-wide) access.
  */
 export async function studentScopeWhere(user: AuthUser): Promise<any | null> {
   switch (user.role) {
     case 'STUDENT': {
       const id = await getStudentProfileId(user);
-      return { id: id || '__none__' };
+      return { _id: id ? oid(id) : null };
     }
     case 'PARENT': {
       const ids = await getParentChildStudentIds(user);
-      return { id: { in: ids.length ? ids : ['__none__'] } };
+      return { _id: { $in: ids.length ? ids.map((x) => oid(x)) : [] } };
     }
     case 'HOD': {
       const deptId = await getHodDepartmentId(user);
-      return { departmentId: deptId || '__none__' };
+      return { departmentId: deptId ? oid(deptId) : null };
     }
     case 'COORDINATOR': {
       const sectionIds = await getCoordinatorSectionIds(user);
-      return { sectionId: { in: sectionIds.length ? sectionIds : ['__none__'] } };
+      return { sectionId: { $in: sectionIds.length ? sectionIds.map((x) => oid(x)) : [] } };
     }
     case 'TEACHER': {
-      // teachers see students in sections where they hold an allocation
       const tpId = await getTeacherProfileId(user);
       const allocs = tpId
-        ? await prisma.teacherAllocation.findMany({ where: { teacherId: tpId }, select: { sectionId: true } })
+        ? await TeacherAllocation.find({ teacherId: oid(tpId) }).select('sectionId')
         : [];
-      const sectionIds = Array.from(new Set(allocs.map((a) => a.sectionId)));
-      return { sectionId: { in: sectionIds.length ? sectionIds : ['__none__'] } };
+      const sectionIds = Array.from(new Set(allocs.map((a: any) => String(a.sectionId))));
+      return { sectionId: { $in: sectionIds.length ? sectionIds.map((x) => oid(x)) : [] } };
     }
     default:
       return null; // unrestricted
@@ -86,6 +79,6 @@ export async function studentScopeWhere(user: AuthUser): Promise<any | null> {
 export async function assertCanAccessStudent(user: AuthUser, studentProfileId: string) {
   const where = await studentScopeWhere(user);
   if (where === null) return; // unrestricted
-  const match = await prisma.studentProfile.findFirst({ where: { id: studentProfileId, AND: [where] } });
+  const match = await StudentProfile.findOne({ _id: oid(studentProfileId), ...where });
   if (!match) throw httpError(403, 'You are not permitted to access this student');
 }

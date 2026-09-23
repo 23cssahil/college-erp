@@ -1,12 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
-import { prisma } from '../lib/prisma';
-import { httpError } from '../lib/http';
-import { verifyAccessToken } from '../lib/http';
+import { User, Role } from '../models';
+import { httpError, verifyAccessToken } from '../lib/http';
 
 export interface AuthUser {
   id: string;
   role: string; // RoleName
-  roleId: number;
+  roleId: string;
   fullName: string;
   permissions: Set<string>; // expanded grant keys
 }
@@ -20,13 +19,10 @@ declare global {
   }
 }
 
-/** Load the effective permission keys for a role from the DB (cached per request). */
-export async function loadPermissionsForRole(roleId: number): Promise<Set<string>> {
-  const rows = await prisma.rolePermission.findMany({
-    where: { roleId },
-    include: { permission: { select: { key: true } } },
-  });
-  return new Set(rows.map((r) => r.permission.key));
+/** Load the effective permission keys for a role from the DB. */
+export async function loadPermissionsForRole(roleId: string): Promise<Set<string>> {
+  const role = await Role.findById(roleId).select('permissionKeys');
+  return new Set(role?.permissionKeys || []);
 }
 
 /** Check a permission key against the user's grants, honouring "*:*" and "module:*". */
@@ -52,18 +48,16 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       throw httpError(401, 'Invalid or expired token');
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: payload.sub },
-      include: { role: true },
-    });
+    const user = await User.findById(payload.sub).populate('roleId');
     if (!user) throw httpError(401, 'Account not found');
     if (user.status !== 'ACTIVE') throw httpError(403, `Account is ${user.status.toLowerCase()}`);
+    const role: any = (user as any).roleId;
 
-    const permissions = await loadPermissionsForRole(user.roleId);
+    const permissions = await loadPermissionsForRole(String(role._id));
     req.user = {
-      id: user.id,
-      role: user.role.name,
-      roleId: user.roleId,
+      id: String(user._id),
+      role: role.name,
+      roleId: String(role._id),
       fullName: user.fullName,
       permissions,
     };

@@ -1,9 +1,10 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import path from 'path';
+import mongoose from 'mongoose';
 import { env } from './config';
-import { prisma } from './lib/prisma';
+import { connectDb } from './lib/db';
+import { SystemSetting } from './models';
 import { uploadsDir } from './lib/upload';
 import { notFound, errorHandler } from './middleware/error';
 import { authenticate } from './middleware/auth';
@@ -32,19 +33,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(uploadsDir));
 
 app.get('/api/health', async (_req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ ok: true, service: 'college-erp-api', db: 'up', time: new Date().toISOString() });
-  } catch (e: any) {
-    res.status(500).json({ ok: false, db: 'down', error: e.message });
-  }
+  const up = mongoose.connection.readyState === 1;
+  if (up) res.json({ ok: true, service: 'college-erp-api', db: 'up', time: new Date().toISOString() });
+  else res.status(500).json({ ok: false, db: 'down' });
 });
 
 // public branding for the login screen
 app.get('/api/public-config', async (_req, res) => {
-  const settings = await prisma.systemSetting.findMany();
+  const settings = await SystemSetting.find();
   const map: Record<string, string> = {};
-  for (const s of settings) map[s.key] = s.value;
+  for (const s of settings) map[s.key] = s.value || '';
   res.json({ collegeName: map['college.name'] || 'College ERP', collegeShort: map['college.short'] || 'ERP' });
 });
 
@@ -69,9 +67,9 @@ app.use(errorHandler);
 async function main() {
   // safety: ensure DB is reachable before opening the port
   try {
-    await prisma.$connect();
+    await connectDb();
   } catch (e: any) {
-    console.error('⚠️  Database connection failed. Check DATABASE_URL in .env —', e.message);
+    console.error('⚠️  Database connection failed. Check MONGODB_URI in .env —', e.message);
     process.exit(1);
   }
   app.listen(env.port, () => {

@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { prisma } from '../lib/prisma';
+import { AuditLog } from '../models';
 
 /** Fire-and-forget audit trail writer. Never throws into the request path. */
 export async function audit(
@@ -10,15 +10,13 @@ export async function audit(
   detail?: unknown,
 ) {
   try {
-    await prisma.auditLog.create({
-      data: {
-        userId: req.user?.id ?? null,
-        action,
-        entity,
-        entityId: entityId ?? null,
-        detail: detail ? JSON.stringify(detail).slice(0, 2000) : null,
-        ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip,
-      },
+    await AuditLog.create({
+      userId: req.user?.id ?? null,
+      action,
+      entity,
+      entityId: entityId ?? null,
+      detail: detail ? JSON.stringify(detail).slice(0, 2000) : null,
+      ip: (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip,
     });
   } catch {
     /* auditing must not break the request */

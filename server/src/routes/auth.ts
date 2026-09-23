@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { z } from 'zod';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
-import { prisma } from '../lib/prisma';
-import { wrap, httpError, hashToken } from '../lib/http';
+import {
+  User, Role, StudentProfile, TeacherProfile, PasswordResetToken, RefreshToken, UserSessionInfo,
+} from '../models';
+import { wrap, httpError, hashToken, oid } from '../lib/http';
 import { validate } from '../lib/validate';
 import { hashPassword, verifyPassword, issueTokens, rotateRefreshToken, revokeRefreshToken } from '../lib/tokens';
 import { authenticate, loadPermissionsForRole } from '../middleware/auth';
@@ -15,13 +17,23 @@ const router = Router();
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 
 async function serializeUser(userId: string) {
-  const u = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    include: { role: true, studentProfile: { include: { course: true, department: true, semester: true, section: true } }, teacherProfile: { include: { department: true } } },
+  const u = await User.findById(userId).populate({ path: 'roleId', as: 'role', select: 'name label' });
+  if (!u) throw httpError(404, 'User not found');
+  const role: any = (u as any).toJSON().role;
+  const perms = await loadPermissionsForRole(role.id);
+
+  const student = await StudentProfile.findOne({ userId: u._id }).populate([
+    { path: 'courseId', as: 'course', select: 'name code' },
+    { path: 'departmentId', as: 'department', select: 'name code' },
+    { path: 'semesterId', as: 'semester', select: 'number' },
+    { path: 'sectionId', as: 'section', select: 'name' },
+  ]);
+  const teacher = await TeacherProfile.findOne({ userId: u._id }).populate({
+    path: 'departmentId', as: 'department', select: 'name code',
   });
-  const perms = await loadPermissionsForRole(u.roleId);
+
   return {
-    id: u.id,
+    id: String(u._id),
     email: u.email,
     username: u.username,
     fullName: u.fullName,
@@ -29,10 +41,10 @@ async function serializeUser(userId: string) {
     photoUrl: u.photoUrl,
     status: u.status,
     mustChangePwd: u.mustChangePwd,
-    role: { id: u.role.id, name: u.role.name, label: u.role.label },
+    role: { id: role.id, name: role.name, label: role.label },
     permissions: Array.from(perms),
-    student: u.studentProfile,
-    teacher: u.teacherProfile,
+    student: student ? student.toJSON() : null,
+    teacher: teacher ? teacher.toJSON() : null,
   };
 }
 
@@ -47,22 +59,22 @@ router.post(
   validate(loginSchema),
   wrap(async (req, res) => {
     const { identifier, password } = req.body;
-    const user = await prisma.user.findFirst({
-      where: { OR: [{ email: identifier.toLowerCase() }, { username: identifier }] },
-      include: { role: true },
-    });
+    const user = await User.findOne({
+      $or: [{ email: String(identifier).toLowerCase() }, { username: identifier }],
+    }).populate({ path: 'roleId', as: 'role', select: 'name' });
     if (!user || !(await verifyPassword(user.passwordHash, password))) {
       throw httpError(401, 'Invalid credentials');
     }
     if (user.status !== 'ACTIVE') throw httpError(403, `Account is ${user.status.toLowerCase()}`);
 
+    const role: any = (user as any).toJSON().role;
     const ua = req.headers['user-agent'] || '';
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.ip;
-    const tokens = await issueTokens(user.id, user.role.name, { userAgent: ua, ip, device: ua });
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
-    await audit(req, 'LOGIN', 'auth', user.id, { identifier });
+    const tokens = await issueTokens(String(user._id), role.name, { userAgent: ua, ip, device: ua });
+    await User.updateOne({ _id: user._id }, { lastLoginAt: new Date() });
+    await audit(req, 'LOGIN', 'auth', String(user._id), { identifier });
 
-    res.json({ user: await serializeUser(user.id), ...tokens });
+    res.json({ user: await serializeUser(String(user._id)), ...tokens });
   }),
 );
 
@@ -94,10 +106,13 @@ router.post(
   authenticate,
   validate(changePwdSchema),
   wrap(async (req, res) => {
-    const u = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.id } });
+    const u = await User.findById(req.user!.id);
+    if (!u) throw httpError(404, 'User not found');
     if (!(await verifyPassword(u.passwordHash, req.body.currentPassword))) throw httpError(400, 'Current password is incorrect');
-    await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await hashPassword(req.body.newPassword), mustChangePwd: false } });
-    await audit(req, 'CHANGE_PASSWORD', 'auth', u.id);
+    u.passwordHash = await hashPassword(req.body.newPassword);
+    u.mustChangePwd = false;
+    await u.save();
+    await audit(req, 'CHANGE_PASSWORD', 'auth', String(u._id));
     res.json({ ok: true });
   }),
 );
@@ -111,18 +126,19 @@ router.post(
   validate(z.object({ identifier: z.string().min(2) })),
   wrap(async (req, res) => {
     const { identifier } = req.body;
-    const user = await prisma.user.findFirst({
-      where: { OR: [{ email: identifier.toLowerCase() }, { username: identifier }], status: 'ACTIVE' },
+    const user = await User.findOne({
+      $or: [{ email: String(identifier).toLowerCase() }, { username: identifier }],
+      status: 'ACTIVE',
     });
     // Always respond 200 to avoid user enumeration
     const generic = { ok: true, message: 'If an account exists, a password reset link has been sent.' };
     if (!user) return res.json(generic);
 
     const raw = crypto.randomBytes(32).toString('hex');
-    await prisma.passwordResetToken.create({
-      data: { userId: user.id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) },
+    await PasswordResetToken.create({
+      userId: user._id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
-    await audit(req, 'FORGOT_PASSWORD', 'auth', user.id);
+    await audit(req, 'FORGOT_PASSWORD', 'auth', String(user._id));
     res.json(env.nodeEnv === 'production' ? generic : { ...generic, devResetToken: raw });
   }),
 );
@@ -132,33 +148,31 @@ router.post(
   authLimiter,
   validate(z.object({ token: z.string().min(10), newPassword: z.string().min(8) })),
   wrap(async (req, res) => {
-    const stored = await prisma.passwordResetToken.findUnique({ where: { tokenHash: hashToken(req.body.token) } });
+    const stored = await PasswordResetToken.findOne({ tokenHash: hashToken(req.body.token) });
     if (!stored || stored.usedAt || stored.expiresAt < new Date()) throw httpError(400, 'Invalid or expired reset token');
-    await prisma.user.update({
-      where: { id: stored.userId },
-      data: { passwordHash: await hashPassword(req.body.newPassword), mustChangePwd: false },
-    });
-    await prisma.passwordResetToken.update({ where: { id: stored.id }, data: { usedAt: new Date() } });
-    await prisma.refreshToken.updateMany({ where: { userId: stored.userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    await User.updateOne(
+      { _id: stored.userId },
+      { passwordHash: await hashPassword(req.body.newPassword), mustChangePwd: false },
+    );
+    await PasswordResetToken.updateOne({ _id: stored._id }, { usedAt: new Date() });
+    await RefreshToken.updateMany({ userId: stored.userId, revokedAt: null }, { revokedAt: new Date() });
     res.json({ ok: true });
   }),
 );
 
 // ── Sessions ─────────────────────────────────────────────────────────────
 router.get('/sessions', authenticate, wrap(async (req, res) => {
-  const sessions = await prisma.userSessionInfo.findMany({
-    where: { userId: req.user!.id },
-    orderBy: { lastActive: 'desc' },
-    select: { id: true, device: true, ip: true, lastActive: true },
-  });
-  res.json({ sessions });
+  const sessions = await UserSessionInfo.find({ userId: oid(req.user!.id) })
+    .sort({ lastActive: -1 })
+    .select('device ip lastActive');
+  res.json({ sessions: sessions.map((s: any) => s.toJSON()) });
 }));
 
 router.delete('/sessions/:id', authenticate, wrap(async (req, res) => {
-  const s = await prisma.userSessionInfo.findFirst({ where: { id: req.params.id, userId: req.user!.id } });
+  const s = await UserSessionInfo.findOne({ _id: oid(req.params.id), userId: oid(req.user!.id) });
   if (!s) throw httpError(404, 'Session not found');
-  await prisma.refreshToken.updateMany({ where: { tokenHash: s.tokenHash, revokedAt: null }, data: { revokedAt: new Date() } });
-  await prisma.userSessionInfo.delete({ where: { id: s.id } });
+  await RefreshToken.updateMany({ tokenHash: s.tokenHash, revokedAt: null }, { revokedAt: new Date() });
+  await UserSessionInfo.deleteOne({ _id: s._id });
   res.json({ ok: true });
 }));
 
