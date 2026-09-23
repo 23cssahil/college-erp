@@ -175,11 +175,17 @@ const DepartmentSchema = new Schema(
     name: { type: String, required: true },
     description: String,
     isActive: { type: Boolean, default: true },
-    hodId: { type: O, ref: 'User', unique: true, sparse: true },
+    // A user may lead at most one department. Kept as an explicit partial index
+    // (not the field `unique` shorthand) because Mongoose drops
+    // `partialFilterExpression` from field-level unique — a plain unique index
+    // indexes MISSING hodId as null, so the 2nd unassigned dept collides (E11000 → 409).
+    hodId: { type: O, ref: 'User' },
     academicYearId: { type: O, ref: 'AcademicYear' },
   },
   { timestamps: true },
 );
+// unique among real users only — partial filter excludes null/missing hodId
+DepartmentSchema.index({ hodId: 1 }, { unique: true, partialFilterExpression: { hodId: { $type: 'objectId' } } });
 serialize(DepartmentSchema);
 
 const CourseSchema = new Schema(
