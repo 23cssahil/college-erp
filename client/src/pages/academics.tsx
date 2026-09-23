@@ -37,9 +37,15 @@ export function DepartmentsPage() {
 }
 
 function HodButton({ row, reload }: { row: any; reload: () => void }) {
+  // any faculty member can lead a department, so list all teachers (not just this
+  // dept's) with designation + department so the right person is easy to spot
   const { data } = useLoad<any[]>(async () => {
-    const { data } = await api.get('/teachers', { params: { departmentId: row.id, limit: 100 } });
-    return data.items || [];
+    const { data } = await api.get('/teachers', { params: { limit: 300 } });
+    const items: any[] = data.items || [];
+    // this department's teachers first, then alphabetical
+    return items.sort((a, b) =>
+      (b.departmentId === row.id ? 1 : 0) - (a.departmentId === row.id ? 1 : 0)
+      || (a.user?.fullName || '').localeCompare(b.user?.fullName || ''));
   }, [row.id]);
   async function assign(userId: string) {
     try {
@@ -51,7 +57,10 @@ function HodButton({ row, reload }: { row: any; reload: () => void }) {
     <select className="input !w-auto !py-1 text-xs" value={row.hod?.id || ''} onChange={(e) => assign(e.target.value)}
       title="Assign HOD">
       <option value="">Assign HOD…</option>
-      {(data || []).map((t: any) => <option key={t.id} value={t.userId}>{t.user?.fullName}</option>)}
+      {(data || []).map((t: any) => {
+        const meta = [t.designation, t.department?.code].filter(Boolean).join(' · ');
+        return <option key={t.id} value={t.userId}>{t.user?.fullName}{meta ? ` — ${meta}` : ''}</option>;
+      })}
     </select>
   );
 }
@@ -193,7 +202,10 @@ function CoordinatorButton({ row, reload }: { row: any; reload: () => void }) {
         } catch (err) { alert(errMsg(err)); }
       }}>
       <option value="">Assign coordinator…</option>
-      {(data || []).map((t: any) => <option key={t.id} value={t.userId}>{t.user?.fullName}</option>)}
+      {(data || []).map((t: any) => {
+        const meta = [t.designation, t.department?.code].filter(Boolean).join(' · ');
+        return <option key={t.id} value={t.userId}>{t.user?.fullName}{meta ? ` — ${meta}` : ''}</option>;
+      })}
     </select>
   );
 }
