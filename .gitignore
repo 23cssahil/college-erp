@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# TS compiler emit next to config files (source of truth is *.ts)
+client/vite.config.js
+client/vite.config.d.ts
+server/vite.config.d.ts
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Uploads (production should use object storage)
+server/uploads/
+
+# Local embedded-postgres data dir (dev verification only)
+.pgdata/
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
