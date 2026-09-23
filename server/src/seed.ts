@@ -31,8 +31,9 @@ const ROLES: { name: (typeof RoleName)[number]; label: string }[] = [
   { name: 'PARENT', label: 'Parent' },
 ];
 
-// One real login per role. Passwords are a dev default and flagged for change.
-const DEFAULT_PASSWORD = process.env.SEED_PASSWORD || 'Admin@123';
+// One real login per role. The initial password MUST come from the SEED_PASSWORD
+// env var (never hardcoded in the repo). Accounts are flagged mustChangePwd:true.
+const DEFAULT_PASSWORD = process.env.SEED_PASSWORD || '';
 const SEED_USERS: { username: string; fullName: string; role: string }[] = [
   { username: 'superadmin', fullName: 'Super Administrator', role: 'SUPER_ADMIN' },
   { username: 'principal', fullName: 'Principal', role: 'PRINCIPAL' },
@@ -57,6 +58,7 @@ async function main() {
     Role.deleteMany({}),
     User.deleteMany({}),
     SystemSetting.deleteMany({}),
+    AcademicYear.deleteMany({}),
   ]);
 
   // ── Permissions (incl. the super wildcard) ─────────────────────────
@@ -74,6 +76,14 @@ async function main() {
   console.log(`  ✓ ${ROLES.length} roles`);
 
   // ── One real user per role ─────────────────────────────────────────
+  if (!DEFAULT_PASSWORD) {
+    throw new Error(
+      'SEED_PASSWORD env var is required. Set it in server/.env (a strong password, min 8 chars) before seeding. It is intentionally NOT hardcoded so it never leaks into the repo.',
+    );
+  }
+  if (DEFAULT_PASSWORD.length < 8) {
+    throw new Error('SEED_PASSWORD must be at least 8 characters.');
+  }
   const passwordHash = await hashPassword(DEFAULT_PASSWORD);
   for (const u of SEED_USERS) {
     await User.create({
@@ -86,7 +96,7 @@ async function main() {
       roleId: roleIdByName[u.role],
     });
   }
-  console.log(`  ✓ ${SEED_USERS.length} user accounts (password: ${DEFAULT_PASSWORD})`);
+  console.log(`  ✓ ${SEED_USERS.length} user accounts (initial password from SEED_PASSWORD env; change on first login)`);
 
   // ── Active academic year (operational config, not fake data) ───────
   const now = new Date();
@@ -106,7 +116,7 @@ async function main() {
   ]);
   console.log('  ✓ system settings');
 
-  console.log('\n✅ Seed complete. Sign in with any role account, e.g. "superadmin" / ' + DEFAULT_PASSWORD);
+  console.log('\n✅ Seed complete. Sign in with any role username (e.g. "superadmin") and the SEED_PASSWORD you set; you\'ll be asked to change it on first login.');
 }
 
 main()

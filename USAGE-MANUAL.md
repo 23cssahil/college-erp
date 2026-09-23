@@ -61,7 +61,7 @@ Iska **login page (frontend) abhi deploy nahi hua**. Do raste:
 
 > ⚠️ Database mein abhi **sirf ye 10 accounts** hain. Koi student/teacher/department ka **real data nahi** — wo aapko banana hoga (section 5).
 
-**Har account ka password: `Admin@123`**
+**Har account ka initial password `server/.env` ke `SEED_PASSWORD` mein hai** (repo mein nahi — security ke liye). Filhaal wo hai: `College@Erp2026!`
 
 Login screen par **"Email / Username"** field mein ye **username** daalo:
 
@@ -82,7 +82,7 @@ Email se bhi login kar sakte ho: `username@college.edu` (jaise `principal@colleg
 
 **Example:**
 - Username: `principal`
-- Password: `Admin@123`
+- Password: `College@Erp2026!` (aapka `SEED_PASSWORD`)
 - **Sign in** dabao.
 
 ---
@@ -92,11 +92,11 @@ Email se bhi login kar sakte ho: `username@college.edu` (jaise `principal@colleg
 Login ke baad upar ek **heli banner** dikhega: *"You're using a temporary password. Please change it."*
 
 1. Header mein **amber "change it"** button dabao.
-2. **Current password:** `Admin@123`
+2. **Current password:** `College@Erp2026!`
 3. **New password:** kuch strong (kam se kam 8 characters), khud yaad rakh lo.
 4. Save.
 
-> Ye zaroori hai — `Admin@123` public jaisa hai, ise production mein mat chhodo.
+> Ye zaroori hai — initial password ab repo mein hardcoded nahi (sirf `server/.env` mein), lekin fir bhi first login ke baad apna private password set kar lo.
 
 ---
 
@@ -186,7 +186,7 @@ Abhi sirf API live hai. Poora app live karne ke liye Render par ek **Static Site
 
 | Problem | Kaaran / Solution |
 |---|---|
-| Login par **"Invalid credentials"** | Username/password galat. Password exactly `Admin@123` (capital A, @). |
+| Login par **"Invalid credentials"** | Username/password galat. Initial password `server/.env` ke `SEED_PASSWORD` mein hota hai (repo mein nahi). |
 | **"Account is INACTIVE/SUSPENDED"** | Us user ko deactivate kiya gaya — Super Admin → Users se ACTIVE karo. |
 | Menu item **nahi dikh raha** | Aapke role ke paas permission nahi (section 6). |
 | Live site par **CORS / network error** | API ka `CLIENT_ORIGIN` frontend URL se match nahi karta (section 8 step 6). |
@@ -198,7 +198,7 @@ Abhi sirf API live hai. Poora app live karne ke liye Render par ek **Static Site
 ## 10. Quick start (bas 3 step)
 
 1. Server + Client chalao (section 2 Option A) → **http://localhost:5173**
-2. `principal` / `Admin@123` se login → password badlo.
+2. `principal` / `<SEED_PASSWORD>` se login → password badlo.
 3. Section 5 ka **Setup Order** follow karke pehle Departments, Courses, Students banao.
 
 ---
