@@ -15,7 +15,7 @@
 import { connectDb, disconnectDb } from './lib/db';
 import { hashPassword } from './lib/tokens';
 import { PERMISSIONS, expandGrants } from './permissions/catalog';
-import { Permission, Role, User, AcademicYear, SystemSetting, RoleName } from './models';
+import { Permission, Role, User, AcademicYear, SystemSetting, Period, RoleName } from './models';
 import { env } from './config';
 
 const ROLES: { name: (typeof RoleName)[number]; label: string }[] = [
@@ -115,6 +115,22 @@ async function main() {
     { key: 'college.short', value: 'ERP', label: 'Short name' },
   ]);
   console.log('  ✓ system settings');
+
+  // ── Default bell-schedule periods (timetable rows). Only created when none
+  //    exist, so edits made from the UI survive re-seeding.
+  if (!(await Period.countDocuments())) {
+    await Period.insertMany([
+      { number: 1, label: 'P1', startTime: '09:00', endTime: '09:55' },
+      { number: 2, label: 'P2', startTime: '09:55', endTime: '10:50' },
+      { number: 3, label: 'P3', startTime: '11:00', endTime: '11:55' },
+      { number: 4, label: 'P4', startTime: '11:55', endTime: '12:50', breakAfter: true },
+      { number: 5, label: 'P5', startTime: '13:30', endTime: '14:25' },
+      { number: 6, label: 'P6', startTime: '14:25', endTime: '15:20' },
+      { number: 7, label: 'P7', startTime: '15:30', endTime: '16:25' },
+      { number: 8, label: 'P8', startTime: '16:25', endTime: '17:20' },
+    ]);
+    console.log('  ✓ 8 default periods (bell schedule)');
+  }
 
   console.log('\n✅ Seed complete. Sign in with any role username (e.g. "superadmin") and the SEED_PASSWORD you set; you\'ll be asked to change it on first login.');
 }

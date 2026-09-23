@@ -30,6 +30,12 @@ router.post('/periods', requirePermission('timetable:manage', 'settings:manage')
   res.json({ item: item.toJSON() });
 }));
 
+router.delete('/periods/:number', requirePermission('timetable:manage', 'settings:manage'), wrap(async (req, res) => {
+  await Period.deleteOne({ number: Number(req.params.number) });
+  await audit(req, 'DELETE', 'periods', req.params.number);
+  res.json({ ok: true });
+}));
+
 /* ══════════════════════ TIMETABLE ══════════════════════ */
 router.get('/timetable', requirePermission('timetable:view'), wrap(async (req, res) => {
   const sectionId = req.query.sectionId as string;

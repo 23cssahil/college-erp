@@ -112,7 +112,8 @@ export function Resource(p: ResourceProps) {
 
   const load = useLoad<{ items: any[]; total?: number }>(async () => {
     const { data } = await api.get(p.endpoint, { params: query });
-    return { items: data.items || data, total: data.total };
+    const items = data.items || (Array.isArray(data) ? data : []);
+    return { items, total: data.total };
   }, [p.endpoint, page, q, JSON.stringify(fq)]);
 
   const rows = load.data?.items || [];

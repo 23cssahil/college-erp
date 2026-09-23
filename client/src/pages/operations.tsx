@@ -27,6 +27,7 @@ export function TimetablePage() {
   const teachers = useLoad(async () => (await api.get('/teachers', { params: { limit: 200 } })).data.items || [], []);
 
   const [cell, setCell] = useState<{ day: string; periodNumber: number } | null>(null);
+  const [showPeriods, setShowPeriods] = useState(false);
   const grid = useMemo(() => {
     const g: Record<string, any> = {};
     for (const s of slots.data || []) g[`${s.day}-${s.periodNumber}`] = s;
@@ -38,11 +39,16 @@ export function TimetablePage() {
   return (
     <div>
       <PageHeader title="Timetable" subtitle="Assign subjects & teachers per period; publish to make visible to students"
-        actions={mayEdit && sectionId && (
-          <Button variant={published ? 'secondary' : 'primary'} disabled={!!published} onClick={async () => {
-            try { await api.post('/timetable/publish', { sectionId, publish: true }); alert('Timetable published'); slots.reload(); sections.reload(); }
-            catch (e) { alert(errMsg(e)); }
-          }}>{published ? 'Published ✓' : 'Publish timetable'}</Button>
+        actions={mayEdit && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={() => setShowPeriods(true)}>⏰ Manage periods</Button>
+            {sectionId && (
+              <Button variant={published ? 'primary' : 'secondary'} disabled={!!published} onClick={async () => {
+                try { await api.post('/timetable/publish', { sectionId, publish: true }); alert('Timetable published'); slots.reload(); sections.reload(); }
+                catch (e) { alert(errMsg(e)); }
+              }}>{published ? 'Published ✓' : 'Publish timetable'}</Button>
+            )}
+          </div>
         )} />
 
       <Card className="mb-4">
@@ -57,7 +63,13 @@ export function TimetablePage() {
       </Card>
 
       {!sectionId ? <Card><p className="text-sm text-slate-500">Choose a section to edit its timetable.</p></Card>
-        : slots.loading ? <Spinner /> : (
+        : slots.loading ? <Spinner />
+        : !(periods.data || []).length ? (
+        <Card><p className="text-sm text-slate-500">
+          No periods defined yet — the timetable grid needs a bell schedule first.
+          {' '}{mayEdit && <button className="font-semibold text-brand-600 underline" onClick={() => setShowPeriods(true)}>Add periods →</button>}
+        </p></Card>
+      ) : (
         <div className="table-wrap">
           <table className="data">
             <thead><tr><th>Period</th>{DAYS.map((d) => <th key={d}>{dayLabel[d]}</th>)}</tr></thead>
@@ -101,7 +113,78 @@ export function TimetablePage() {
           onClose={() => setCell(null)} onSaved={() => { setCell(null); slots.reload(); }}
         />
       )}
+
+      {showPeriods && (
+        <PeriodsModal
+          periods={periods.data || []}
+          onClose={() => setShowPeriods(false)}
+          onSaved={() => { setShowPeriods(false); periods.reload(); }}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── bell-schedule editor: each period becomes a row in the grid ── */
+function PeriodsModal({ periods, onClose, onSaved }: any) {
+  const [rows, setRows] = useState<any[]>(periods.map((p: any) => ({
+    number: p.number, startTime: p.startTime, endTime: p.endTime, breakAfter: !!p.breakAfter,
+  })));
+  const [removed, setRemoved] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  function upd(i: number, patch: any) { setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x))); }
+  function addRow() {
+    const next = rows.reduce((m, r) => Math.max(m, r.number), 0) + 1;
+    setRows((r) => [...r, { number: next, startTime: '09:00', endTime: '09:55', breakAfter: false, isNew: true }]);
+  }
+  function removeRow(i: number) {
+    const row = rows[i];
+    if (!row.isNew) setRemoved((d) => [...d, row.number]);
+    setRows((r) => r.filter((_, j) => j !== i));
+  }
+
+  async function save() {
+    setBusy(true); setErr('');
+    try {
+      for (const n of removed) await api.delete(`/periods/${n}`);
+      for (const r of rows) {
+        if (!r.startTime || !r.endTime) throw new Error(`Period ${r.number}: start and end time are required`);
+        await api.post('/periods', { number: r.number, startTime: r.startTime, endTime: r.endTime, breakAfter: r.breakAfter });
+      }
+      onSaved();
+    } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Manage periods (bell schedule)">
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-rose-200">{err}</div>}
+        <p className="text-xs text-slate-500">Each period becomes a row in the timetable grid. Times are 24-hour.</p>
+        {rows.map((r, i) => (
+          <div key={i} className="flex flex-wrap items-center gap-2">
+            <span className="w-9 text-sm font-semibold text-slate-600">P{r.number}</span>
+            <TextInput type="time" value={r.startTime} onChange={(e: any) => upd(i, { startTime: e.target.value })} className="w-32" />
+            <span className="text-slate-400">→</span>
+            <TextInput type="time" value={r.endTime} onChange={(e: any) => upd(i, { endTime: e.target.value })} className="w-32" />
+            <label className="flex items-center gap-1.5 text-xs text-slate-500">
+              <input type="checkbox" className="h-3.5 w-3.5 accent-brand-600" checked={r.breakAfter} onChange={(e: any) => upd(i, { breakAfter: e.target.checked })} />
+              break after
+            </label>
+            <button type="button" className="ml-auto text-xs text-rose-500 hover:underline" onClick={() => removeRow(i)}>remove</button>
+          </div>
+        ))}
+        {!rows.length && <p className="text-sm text-slate-400">No periods yet.</p>}
+        <div className="flex items-center justify-between pt-2">
+          <Button variant="secondary" onClick={addRow}>+ Add period</Button>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save periods'}</Button>
+          </div>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

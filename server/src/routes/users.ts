@@ -34,7 +34,7 @@ router.get('/', wrap(async (req, res) => {
     User.find(where).skip(skip).limit(limit).sort({ createdAt: -1 })
       .populate({ path: 'roleId', as: 'role', select: 'name label' }),
   ]);
-  res.json({ total, page, limit, users: users.map((u: any) => u.toJSON()) });
+  res.json({ total, page, limit, items: users.map((u: any) => u.toJSON()) });
 }));
 
 router.get('/:id', wrap(async (req, res) => {
