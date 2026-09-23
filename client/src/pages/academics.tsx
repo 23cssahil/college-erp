@@ -37,16 +37,12 @@ export function DepartmentsPage() {
 }
 
 function HodButton({ row, reload }: { row: any; reload: () => void }) {
-  // any faculty member can lead a department, so list all teachers (not just this
-  // dept's) with designation + department so the right person is easy to spot
+  // eligible leaders = users with the HOD or Teacher login role (server endpoint);
+  // fixed-width select so rows don't jitter as the list loads
   const { data } = useLoad<any[]>(async () => {
-    const { data } = await api.get('/teachers', { params: { limit: 300 } });
-    const items: any[] = data.items || [];
-    // this department's teachers first, then alphabetical
-    return items.sort((a, b) =>
-      (b.departmentId === row.id ? 1 : 0) - (a.departmentId === row.id ? 1 : 0)
-      || (a.user?.fullName || '').localeCompare(b.user?.fullName || ''));
-  }, [row.id]);
+    const { data } = await api.get('/academic/departments/hod-candidates');
+    return data.items || [];
+  }, []);
   async function assign(userId: string) {
     try {
       await api.post(`/academic/departments/${row.id}/hod`, { userId: userId || null });
@@ -54,12 +50,12 @@ function HodButton({ row, reload }: { row: any; reload: () => void }) {
     } catch (e) { alert(errMsg(e)); }
   }
   return (
-    <select className="input !w-auto !py-1 text-xs" value={row.hod?.id || ''} onChange={(e) => assign(e.target.value)}
+    <select className="input !w-44 !py-1 text-xs" value={row.hod?.id || ''} onChange={(e) => assign(e.target.value)}
       title="Assign HOD">
       <option value="">Assign HOD…</option>
-      {(data || []).map((t: any) => {
-        const meta = [t.designation, t.department?.code].filter(Boolean).join(' · ');
-        return <option key={t.id} value={t.userId}>{t.user?.fullName}{meta ? ` — ${meta}` : ''}</option>;
+      {(data || []).map((u: any) => {
+        const meta = [u.role?.label || u.role?.name, u.department?.code].filter(Boolean).join(' · ');
+        return <option key={u.id} value={u.id}>{u.fullName}{meta ? ` — ${meta}` : ''}</option>;
       })}
     </select>
   );
@@ -192,7 +188,7 @@ export function SectionsPage() {
 function CoordinatorButton({ row, reload }: { row: any; reload: () => void }) {
   const { data } = useLoad<any[]>(async () => (await api.get('/teachers', { params: { limit: 200 } })).data.items || [], []);
   return (
-    <select className="input !w-auto !py-1 text-xs" value={row.coordinator?.id || ''} title="Assign coordinator"
+    <select className="input !w-44 !py-1 text-xs" value={row.coordinator?.id || ''} title="Assign coordinator"
       onChange={async (e) => {
         const userId = e.target.value;
         if (!userId) return;

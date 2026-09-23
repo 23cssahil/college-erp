@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import {
-  AcademicYear, Department, Course, Semester, Section, User,
+  AcademicYear, Department, Course, Semester, Section, User, Role,
   TeacherProfile, StudentProfile, Subject,
 } from '../models';
 import { wrap, httpError, oid } from '../lib/http';
@@ -99,14 +99,37 @@ router.delete('/departments/:id', requirePermission('departments:delete', 'depar
   res.json({ ok: true });
 }));
 
+// Users eligible to lead a department: anyone with the HOD or TEACHER login role.
+// Listed with their role + department (when they have a faculty record).
+router.get('/departments/hod-candidates', requirePermission('departments:edit', 'departments:manage'), wrap(async (_req, res) => {
+  const roles = await Role.find({ name: { $in: ['HOD', 'TEACHER'] } }).select('_id');
+  const users = await User.find({ roleId: { $in: roles.map((r) => r._id) }, status: 'ACTIVE' })
+    .populate({ path: 'roleId', as: 'role', select: 'name label' })
+    .sort({ fullName: 1 });
+  const items = await Promise.all(users.map(async (u: any) => {
+    const j = u.toJSON();
+    const t = await TeacherProfile.findOne({ userId: u._id })
+      .populate({ path: 'departmentId', as: 'department', select: 'code' });
+    j.department = (t as any)?.department || null;
+    j.designation = t?.designation || null;
+    return j;
+  }));
+  // HOD-role users first, then everyone else alphabetically
+  items.sort((a: any, b: any) => (b.role?.name === 'HOD' ? 1 : 0) - (a.role?.name === 'HOD' ? 1 : 0) || a.fullName.localeCompare(b.fullName));
+  res.json({ items });
+}));
+
 // Assign HOD (a teacher user)
 router.post('/departments/:id/hod', requirePermission('departments:manage', 'departments:edit'), validate(z.object({ userId: z.string().nullish() })), wrap(async (req, res) => {
   const raw = blankToUndef(req.body.userId);
   let hodId: any = null;
   if (raw) {
     hodId = oid(raw);
-    const teacher = await TeacherProfile.findOne({ userId: hodId });
-    if (!teacher) throw httpError(400, 'Selected user is not a teacher');
+    const target = await User.findById(hodId).populate({ path: 'roleId', select: 'name' });
+    const roleName = (target as any)?.roleId?.name;
+    if (!target || !['HOD', 'TEACHER'].includes(roleName)) {
+      throw httpError(400, 'HOD must be a user with the HOD or Teacher role');
+    }
     // clear HOD from any other department first (a user leads one dept)
     await Department.updateMany({ hodId }, { hodId: null });
   }
