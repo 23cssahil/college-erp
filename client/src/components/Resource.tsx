@@ -215,21 +215,26 @@ export function Resource(p: ResourceProps) {
       {(flash || load.error) && <Alert kind={flash ? 'success' : 'error'}>{flash || load.error}</Alert>}
 
       {(p.searchable || p.filters?.length) && (
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-4 flex flex-wrap items-end gap-3">
           {p.searchable && (
             <TextInput placeholder="Search name / roll no / code…" className="max-w-xs"
               value={q} onChange={(e: any) => { setPage(1); setQ(e.target.value); }} />
           )}
           {(p.filters || []).map((f) => {
-            return fieldInput(f, fq[f.name] || '', (v: any) => {
-              setPage(1);
-              setFq((s) => {
-                const next = { ...s, [f.name]: v };
-                // changing a parent filter clears any child filters that depend on it
-                for (const g of p.filters || []) if (g.dependsOn === f.name) next[g.name] = '';
-                return next;
-              });
-            });
+            return (
+              <div key={f.name} className="w-52">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{f.label}</div>
+                {fieldInput(f, fq[f.name] || '', (v: any) => {
+                  setPage(1);
+                  setFq((s) => {
+                    const next = { ...s, [f.name]: v };
+                    // changing a parent filter clears any child filters that depend on it
+                    for (const g of p.filters || []) if (g.dependsOn === f.name) next[g.name] = '';
+                    return next;
+                  });
+                })}
+              </div>
+            );
           })}
         </div>
       )}

@@ -3,14 +3,15 @@ import { Badge } from '../components/ui';
 
 const DEPT: FieldCfg = { name: 'departmentId', label: 'Department', type: 'select', required: true, optionUrl: '/academic/departments' };
 const COURSE: FieldCfg = { name: 'courseId', label: 'Course', type: 'select', required: true, optionUrl: '/academic/courses' };
-const SEM: FieldCfg = { name: 'semesterId', label: 'Semester', type: 'select', required: true, optionUrl: '/academic/semesters' };
+// server returns a composed label like "BTCAI · Semester 3" so the course is visible
+const SEM: FieldCfg = { name: 'semesterId', label: 'Semester', type: 'select', required: true, optionUrl: '/academic/semesters', optionLabelKey: 'label' };
 
 export function SubjectsPage() {
   return (
     <Resource
       endpoint="/subjects" title="Subjects" subtitle="Curriculum subjects per course & semester"
       searchable paginate canEditKey="subjects:edit" canDeleteKey="subjects:delete"
-      filters={[COURSE, SEM, DEPT]}
+      filters={[DEPT, { ...COURSE, dependsOn: 'departmentId' }, { ...SEM, dependsOn: 'departmentId' }]}
       columns={[
         { key: 'code', label: 'Code' },
         { key: 'name', label: 'Subject' },
