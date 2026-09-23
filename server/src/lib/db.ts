@@ -60,7 +60,18 @@ export async function connectDb(): Promise<void> {
   if (!env.mongoUri) {
     throw new Error('MONGODB_URI is not set. Copy server/.env.example → server/.env and fill it in.');
   }
-  const uri = await normalizeUri(cleanEnvValue(env.mongoUri));
+  const raw = env.mongoUri;
+  const cleaned = cleanEnvValue(raw);
+  const hadQuotes = cleaned !== raw.trim();
+  const uri = await normalizeUri(cleaned);
+  // Diagnostic (safe): show the received URI with the password masked, plus the
+  // password length and username. This reveals a mangled env value that causes
+  // "bad auth" (wrong password, stray characters, quotes, truncated value).
+  const masked = uri.replace(/(:\/\/)([^:@/]+):([^@]*)@/, (_m, pre, u, p) => `${pre}${u}:${'*'.repeat(p.length)}@`);
+  const pwdMatch = uri.match(/:\/\/[^:@/]+:([^@]*)@/);
+  const pwdLen = pwdMatch ? pwdMatch[1].length : 0;
+  console.log(`🔎 [db] connecting → ${masked} (password length: ${pwdLen})`);
+  if (hadQuotes) console.log('⚠️  [db] MONGODB_URI had surrounding quotes — they were stripped; clean the value in Render for clarity.');
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 15000,
