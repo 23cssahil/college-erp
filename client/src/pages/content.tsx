@@ -40,7 +40,7 @@ export function NoticesPage() {
       ]}
       template={(form) => ({
         ...form,
-        roleIds: (form.roleIds || []).map(Number),
+        roleIds: form.roleIds || [],
         departmentIds: form.departmentIds || [],
         sectionIds: form.sectionIds || [],
         courseIds: [],
@@ -75,7 +75,7 @@ export function DocumentsPage() {
       fd.append('file', file);
       fd.append('title', form.title || file.name);
       fd.append('category', form.category);
-      fd.append('roleIds', JSON.stringify(form.roleIds.map(Number)));
+      fd.append('roleIds', JSON.stringify(form.roleIds));
       await api.post('/documents', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       setFile(null); setForm({ title: '', category: 'GENERAL', roleIds: [] });
       list.reload();
