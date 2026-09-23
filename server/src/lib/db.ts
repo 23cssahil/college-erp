@@ -45,15 +45,29 @@ async function normalizeUri(raw: string): Promise<string> {
   return `mongodb://${creds}@${resolved.seeds}${pathPart}?${params.toString()}`;
 }
 
+/** Strip accidental surrounding quotes / stray whitespace from an env value.
+ *  Render sets env vars literally (no dotenv), so a value pasted as "..." from a
+ *  .env file would otherwise keep its quotes and break Mongo auth. */
+function cleanEnvValue(v: string): string {
+  let s = v.trim();
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 export async function connectDb(): Promise<void> {
   if (!env.mongoUri) {
     throw new Error('MONGODB_URI is not set. Copy server/.env.example → server/.env and fill it in.');
   }
-  const uri = await normalizeUri(env.mongoUri);
+  const uri = await normalizeUri(cleanEnvValue(env.mongoUri));
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 15000,
     dbName: env.mongoDbName,
+    // Atlas database users live in the `admin` database; authenticating against
+    // it explicitly avoids "bad auth" when the URI carries a different default db.
+    authSource: 'admin',
   });
   console.log(`🗄️  MongoDB connected (db: ${env.mongoDbName})`);
 }
