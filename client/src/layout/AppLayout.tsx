@@ -13,6 +13,8 @@ export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [pwd, setPwd] = useState({ currentPassword: '', newPassword: '' });
+  const [confirmPwd, setConfirmPwd] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
   const [pwdMsg, setPwdMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -22,11 +24,20 @@ export default function AppLayout() {
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setPwdMsg('');
+    // Client-side guards so we don't hit the server with an obviously-bad request.
+    if (pwd.newPassword.length < 8) { setBusy(false); return setPwdMsg('New password must be at least 8 characters.'); }
+    if (pwd.newPassword !== confirmPwd) { setBusy(false); return setPwdMsg('New password and confirmation do not match.'); }
+    if (pwd.newPassword === pwd.currentPassword) { setBusy(false); return setPwdMsg('New password must be different from the current one.'); }
     try {
       await api.post('/auth/change-password', pwd);
-      setPwdOpen(false); setPwd({ currentPassword: '', newPassword: '' });
+      setPwdOpen(false); setPwd({ currentPassword: '', newPassword: '' }); setConfirmPwd('');
     } catch (err: any) {
-      setPwdMsg(err?.response?.data?.error || 'Failed to change password');
+      const code = err?.response?.status;
+      let m = err?.response?.data?.error || 'Failed to change password';
+      if (code === 400 && /current password is incorrect/i.test(m)) {
+        m = 'Current password is incorrect — retype it carefully (watch for Caps Lock / browser autofill). It must be the password you sign in with.';
+      }
+      setPwdMsg(m);
     } finally { setBusy(false); }
   }
 
@@ -129,13 +140,27 @@ export default function AppLayout() {
           {pwdMsg && <div className="rounded-lg bg-rose-50 px-4 py-2.5 text-sm text-rose-700 ring-1 ring-rose-200">{pwdMsg}</div>}
           <div>
             <label className="label">Current password</label>
-            <input type="password" required className="input" value={pwd.currentPassword}
-              onChange={(e) => setPwd({ ...pwd, currentPassword: e.target.value })} />
+            <div className="relative">
+              <input type={showPwd ? 'text' : 'password'} required autoComplete="current-password"
+                className="input pr-16" value={pwd.currentPassword}
+                onChange={(e) => setPwd({ ...pwd, currentPassword: e.target.value })} />
+              <button type="button" tabIndex={-1} onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 hover:text-slate-700">
+                {showPwd ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
           <div>
             <label className="label">New password <span className="text-slate-400">(min 8 characters)</span></label>
-            <input type="password" required minLength={8} className="input" value={pwd.newPassword}
+            <input type={showPwd ? 'text' : 'password'} required minLength={8} autoComplete="new-password"
+              className="input" value={pwd.newPassword}
               onChange={(e) => setPwd({ ...pwd, newPassword: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Confirm new password</label>
+            <input type={showPwd ? 'text' : 'password'} required autoComplete="new-password"
+              className="input" value={confirmPwd}
+              onChange={(e) => setConfirmPwd(e.target.value)} />
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn-secondary" onClick={() => setPwdOpen(false)}>Cancel</button>
