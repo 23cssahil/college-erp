@@ -89,19 +89,27 @@ export function Resource(p: ResourceProps) {
   const [fq, setFq] = useState<Record<string, string>>({});
   const [optionCache, setOptionCache] = useState<Record<string, { value: any; label: string }[]>>({});
 
-  // resolve optionUrl selects (cache key includes the dependsOn filter value so
-  // child option lists reload when their parent filter changes)
-  const optKey = (f: FieldCfg) => {
-    const dep = f.dependsOn ? fq[f.dependsOn] : '';
+  // resolve optionUrl selects (cache key includes the dependsOn value so child
+  // option lists reload when their parent changes — parent lives in the filter
+  // bar (fq) or inside the open form (form), depending on where the field renders)
+  const optKey = (f: FieldCfg, src?: Record<string, string>) => {
+    const s = src || fq;
+    const dep = f.dependsOn ? s[f.dependsOn] : '';
     return f.dependsOn && dep ? `${f.optionUrl}?${f.dependsOn}=${dep}` : f.optionUrl!;
   };
-  const urlFields = useMemo(() => [...createFields, ...editFields, ...(p.filters || [])].filter((f) => f.optionUrl), [createFields, editFields, p.filters]);
+  const optSources = useMemo(() => {
+    const list: { f: FieldCfg; src: Record<string, string> }[] = [];
+    for (const f of [...createFields, ...editFields]) if (f.optionUrl) list.push({ f, src: (form || {}) as Record<string, string> });
+    for (const f of p.filters || []) if (f.optionUrl) list.push({ f, src: fq });
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createFields, editFields, p.filters, form, fq]);
   useEffect(() => {
     (async () => {
-      const need = urlFields.filter((f) => !optionCache[optKey(f)]);
+      const need = optSources.filter(({ f, src }) => !optionCache[optKey(f, src)]);
       if (!need.length) return;
-      const entries = await Promise.all(need.map(async (f) => {
-        const key = optKey(f);
+      const entries = await Promise.all(need.map(async ({ f, src }) => {
+        const key = optKey(f, src);
         try {
           const { data } = await api.get(key);
           const items = data.items || data.roles || data.permissions || (Array.isArray(data) ? data : []);
@@ -111,7 +119,7 @@ export function Resource(p: ResourceProps) {
       setOptionCache((c) => ({ ...c, ...Object.fromEntries(entries) }));
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [urlFields, optionCache, fq]);
+  }, [optSources, optionCache]);
 
   const pageSize = p.pageSize || 20;
   const query: any = p.paginate ? { page, limit: pageSize } : {};
@@ -172,8 +180,15 @@ export function Resource(p: ResourceProps) {
     setFormErr('');
   }
 
-  const fieldInput = (f: FieldCfg, value: any, onChange: (v: any) => void) => {
-    const options = f.options || (f.optionUrl ? optionCache[optKey(f)] || [] : []);
+  const onFormChange = (f: FieldCfg, v: any) => setForm((s: any) => {
+    const next = { ...s, [f.name]: v };
+    // changing a parent field resets form fields that depend on it
+    for (const g of [...createFields, ...editFields]) if (g.dependsOn === f.name) next[g.name] = '';
+    return next;
+  });
+
+  const fieldInput = (f: FieldCfg, value: any, onChange: (v: any) => void, src?: Record<string, string>) => {
+    const options = f.options || (f.optionUrl ? optionCache[optKey(f, src)] || [] : []);
     switch (f.type) {
       case 'select':
       case 'multiselect':
@@ -282,12 +297,12 @@ export function Resource(p: ResourceProps) {
                 <div key={f.name} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
                   {f.type === 'checkbox' ? (
                     <label className="flex items-center gap-2 pt-6">
-                      {fieldInput(f, form[f.name], (v) => setForm({ ...form, [f.name]: v }))}
+                      {fieldInput(f, form[f.name], (v) => onFormChange(f, v), form)}
                       <span className="text-sm font-medium text-slate-600">{f.label}</span>
                     </label>
                   ) : (
                     <Field label={f.label} hint={f.hint}>
-                      {fieldInput(f, form[f.name], (v) => setForm({ ...form, [f.name]: v }))}
+                      {fieldInput(f, form[f.name], (v) => onFormChange(f, v), form)}
                     </Field>
                   )}
                 </div>

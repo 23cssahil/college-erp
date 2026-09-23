@@ -25,7 +25,9 @@ export function SubjectsPage() {
       createFields={[
         { name: 'code', label: 'Subject code', required: true },
         { name: 'name', label: 'Subject name', required: true },
-        COURSE, DEPT, SEM,
+        DEPT,
+        { ...COURSE, dependsOn: 'departmentId', hint: 'select department first' },
+        { ...SEM, dependsOn: 'courseId', hint: 'select course first' },
         { name: 'credits', label: 'Credits', type: 'number', default: 3 },
         { name: 'type', label: 'Type', type: 'select', default: 'THEORY', options: [
           { value: 'THEORY', label: 'Theory' }, { value: 'LAB', label: 'Lab' }, { value: 'THEORY_LAB', label: 'Theory + Lab' },
